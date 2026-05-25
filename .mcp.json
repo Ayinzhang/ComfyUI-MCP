@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "comfyui": {
+      "command": "node",
+      "args": ["C:/ComfyUI-MCP/dist/index.js"],
+      "env": {
+        "COMFYUI_URL": "http://127.0.0.1:8188"
+      }
+    }
+  }
+}
