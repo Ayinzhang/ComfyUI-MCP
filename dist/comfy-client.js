@@ -1,6 +1,7 @@
 import axios from "axios";
 import * as fs from "fs";
 import * as path from "path";
+import FormData from "form-data";
 export class ComfyClient {
     url;
     api;
@@ -50,6 +51,110 @@ export class ComfyClient {
         const models = response.data;
         return models.filter((m) => m.model_type === "checkpoints").map((m) => m.name);
     }
+    async listModels(modelType) {
+        const response = await this.api.get("/models");
+        const models = response.data;
+        if (modelType) {
+            return models.filter((m) => m.model_type === modelType).map((m) => m.name);
+        }
+        return models.map((m) => m.name);
+    }
+    async listUnets() {
+        const response = await this.api.get("/models");
+        const models = response.data;
+        return models.filter((m) => m.model_type === "unet").map((m) => m.name);
+    }
+    async listClips() {
+        const response = await this.api.get("/models");
+        const models = response.data;
+        return models.filter((m) => m.model_type === "clip").map((m) => m.name);
+    }
+    async listVaes() {
+        const response = await this.api.get("/models");
+        const models = response.data;
+        return models.filter((m) => m.model_type === "vae").map((m) => m.name);
+    }
+    async listLoras() {
+        const response = await this.api.get("/models");
+        const models = response.data;
+        return models.filter((m) => m.model_type === "loras").map((m) => m.name);
+    }
+    async listControlnets() {
+        const response = await this.api.get("/models");
+        const models = response.data;
+        return models.filter((m) => m.model_type === "controlnet").map((m) => m.name);
+    }
+    async listUpscaleModels() {
+        const response = await this.api.get("/models");
+        const models = response.data;
+        return models.filter((m) => m.model_type === "upscale_models").map((m) => m.name);
+    }
+    async getProgress() {
+        const response = await this.api.get("/progress");
+        return response.data;
+    }
+    async getExecutionStatus(prompt_id) {
+        const history = await this.getHistory(prompt_id);
+        const promptData = history[prompt_id];
+        if (!promptData) {
+            return { status: "not_found", completed: false };
+        }
+        const statusStr = promptData.status?.status_str || "unknown";
+        return { status: statusStr, completed: statusStr === "success" };
+    }
+    async getQueue() {
+        const response = await this.api.get("/queue");
+        return response.data;
+    }
+    async clearQueue() {
+        try {
+            await this.api.post("/queue/clear");
+            return { cleared: true };
+        }
+        catch (error) {
+            return { cleared: false, error: "Queue clear not supported by this ComfyUI instance" };
+        }
+    }
+    async cancelPrompt(prompt_id) {
+        try {
+            await this.api.post("/cancel", { prompt_id });
+            return { cancelled: true };
+        }
+        catch (error) {
+            return { cancelled: false, error: "Prompt cancellation not supported by this ComfyUI instance" };
+        }
+    }
+    async uploadImage(filePath, overwrite = false) {
+        const formData = new FormData();
+        const fileStream = fs.createReadStream(filePath);
+        const fileName = path.basename(filePath);
+        formData.append("image", fileStream, fileName);
+        formData.append("overwrite", String(overwrite));
+        const response = await this.api.post("/upload/image", formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+        });
+        return response.data;
+    }
+    getImagePath(filename, subfolder = "", type = "output") {
+        const folderMap = {
+            output: "output",
+            temp: "temp",
+            input: "input",
+        };
+        const folder = folderMap[type] || "output";
+        const basePath = process.env.USERPROFILE || process.env.APPDATA || "";
+        const fullPath = path.join(basePath, "Documents", "ComfyUI", folder, filename);
+        const url = `${this.url}/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${type}`;
+        return { path: fullPath, url };
+    }
+    async getMultipleImages(prompt_ids) {
+        const results = {};
+        for (const promptId of prompt_ids) {
+            const images = await this.getImages(promptId);
+            results[promptId] = images.images;
+        }
+        return results;
+    }
     resolvePrompt(workflow, inputs) {
         const resolvedPrompt = {};
         const extraData = {};
@@ -88,7 +193,7 @@ export class ComfyClient {
         return response.data;
     }
     async listWorkflows(dirPath) {
-        const defaultPath = dirPath || path.join(process.env.APPDATA || "", "ComfyUI", "workflows");
+        const defaultPath = dirPath || path.join(process.env.USERPROFILE || "", "Documents", "ComfyUI", "user", "default", "workflows");
         if (!fs.existsSync(defaultPath)) {
             return [];
         }
